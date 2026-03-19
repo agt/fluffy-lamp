@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite3
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Backend static (built artifact — commit if desired)
+# backend/static/
+
+# Misc
+.DS_Store
+*.env
