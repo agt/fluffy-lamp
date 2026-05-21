@@ -13,15 +13,16 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# Pod must have this key in nodeSelector to be considered
+# Pod must have nodeSelector gputype=<one of these values> to be considered
 NODE_SELECTOR_KEY = "gputype"
+NODE_SELECTOR_VALUES = {"a30", "a5000", "rtxtitan", "b24gb", "h20gb"}
 
 # If this toleration key is already present, skip the pod
 SKIP_TOLERATION_KEY = "gpu-class"
 
 # Toleration to inject
 INJECT_TOLERATION = {
-    "key": "gpu-type",
+    "key": "gpu-class",
     "operator": "Equal",
     "value": "medium",
     "effect": "NoSchedule",
@@ -41,7 +42,7 @@ def is_unschedulable(pod) -> bool:
 
 def needs_patch(pod) -> bool:
     node_selector = pod.spec.node_selector or {}
-    if NODE_SELECTOR_KEY not in node_selector:
+    if node_selector.get(NODE_SELECTOR_KEY) not in NODE_SELECTOR_VALUES:
         return False
 
     for t in pod.spec.tolerations or []:
@@ -73,8 +74,9 @@ def run() -> None:
     w = watch.Watch()
 
     log.info(
-        "Watching pods in all namespaces (nodeSelector key=%s, skip toleration key=%s)",
+        "Watching pods in all namespaces (nodeSelector %s∈%s, skip toleration key=%s)",
         NODE_SELECTOR_KEY,
+        NODE_SELECTOR_VALUES,
         SKIP_TOLERATION_KEY,
     )
 
