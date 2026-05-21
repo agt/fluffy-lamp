@@ -13,20 +13,30 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# Pod must have nodeSelector gputype=<one of these values> to be considered
-NODE_SELECTOR_KEY = "gputype"
-NODE_SELECTOR_VALUES = {"a30", "a5000", "rtxtitan", "b24gb", "h20gb"}
-
 # If this toleration key is already present, skip the pod
 SKIP_TOLERATION_KEY = "gpu-class"
 
-# Toleration to inject
-INJECT_TOLERATION = {
-    "key": "gpu-class",
-    "operator": "Equal",
-    "value": "medium",
-    "effect": "NoSchedule",
+# Maps nodeSelector gputype value → gpu-class toleration value to inject
+NODE_SELECTOR_KEY = "gputype"
+GPUTYPE_CLASS: dict[str, str] = {
+    "a30":      "medium",
+    "a5000":    "medium",
+    "rtxtitan": "medium",
+    "b24gb":    "medium",
+    "h20gb":    "medium",
+    "l40s":     "large",
+    "h40gb":    "large",
+    "b48gb":    "large",
 }
+
+
+def make_toleration(gpu_class: str) -> dict:
+    return {
+        "key": SKIP_TOLERATION_KEY,
+        "operator": "Equal",
+        "value": gpu_class,
+        "effect": "NoSchedule",
+    }
 
 
 def is_unschedulable(pod) -> bool:
@@ -40,26 +50,27 @@ def is_unschedulable(pod) -> bool:
     return False
 
 
-def needs_patch(pod) -> bool:
+def gpu_class_for(pod) -> str | None:
+    """Return the gpu-class value to inject, or None if this pod is not in scope."""
     node_selector = pod.spec.node_selector or {}
-    if node_selector.get(NODE_SELECTOR_KEY) not in NODE_SELECTOR_VALUES:
-        return False
+    return GPUTYPE_CLASS.get(node_selector.get(NODE_SELECTOR_KEY, ""))
 
+
+def needs_patch(pod) -> bool:
+    if gpu_class_for(pod) is None:
+        return False
     for t in pod.spec.tolerations or []:
         if t.key == SKIP_TOLERATION_KEY:
             return False
-        # Already injected by a previous pass
-        if t.key == INJECT_TOLERATION["key"]:
-            return False
-
     return True
 
 
-def patch_pod(v1: client.CoreV1Api, namespace: str, name: str) -> None:
+def patch_pod(v1: client.CoreV1Api, namespace: str, name: str, gpu_class: str) -> None:
+    toleration = make_toleration(gpu_class)
     # Strategic merge patch merges tolerations by key, so existing entries are preserved.
-    body = {"spec": {"tolerations": [INJECT_TOLERATION]}}
+    body = {"spec": {"tolerations": [toleration]}}
     v1.patch_namespaced_pod(name=name, namespace=namespace, body=body)
-    log.info("Patched %s/%s → added toleration %s", namespace, name, INJECT_TOLERATION)
+    log.info("Patched %s/%s → added toleration %s", namespace, name, toleration)
 
 
 def run() -> None:
@@ -76,7 +87,7 @@ def run() -> None:
     log.info(
         "Watching pods in all namespaces (nodeSelector %s∈%s, skip toleration key=%s)",
         NODE_SELECTOR_KEY,
-        NODE_SELECTOR_VALUES,
+        set(GPUTYPE_CLASS),
         SKIP_TOLERATION_KEY,
     )
 
@@ -100,7 +111,7 @@ def run() -> None:
                 log.info("Candidate pod %s/%s — patching", ns, name)
 
                 try:
-                    patch_pod(v1, ns, name)
+                    patch_pod(v1, ns, name, gpu_class_for(pod))
                 except ApiException as exc:
                     log.error("Patch failed for %s/%s: %s", ns, name, exc)
 
