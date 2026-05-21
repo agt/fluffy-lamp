@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-toleration-injector
+  namespace: kube-system
+  labels:
+    app: gpu-toleration-injector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpu-toleration-injector
+  template:
+    metadata:
+      labels:
+        app: gpu-toleration-injector
+    spec:
+      serviceAccountName: gpu-toleration-injector
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: injector
+          image: your-registry/gpu-toleration-injector:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+      restartPolicy: Always
