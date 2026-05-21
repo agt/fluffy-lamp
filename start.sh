@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# Start the bulletin board application
-set -e
-cd "$(dirname "$0")/backend"
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
